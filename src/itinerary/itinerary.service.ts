@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   ServiceUnavailableException,
@@ -98,6 +99,13 @@ export class ItineraryService {
     dto: GenerateItineraryDto,
     user?: AuthenticatedUser,
   ): Promise<ItineraryResponse> {
+    if (
+      dto.budgetMin !== undefined &&
+      dto.budgetMax !== undefined &&
+      dto.budgetMin > dto.budgetMax
+    ) {
+      throw new BadRequestException('Ngân sách tối thiểu không được lớn hơn ngân sách tối đa.');
+    }
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     const modelName =
       this.config.get<string>('GEMINI_MODEL') ?? 'gemini-3.5-flash-lite';
@@ -153,14 +161,21 @@ export class ItineraryService {
       parsedItinerary,
       selectedDestination,
     );
+    const itineraryWithConstraints: ItineraryResponse = {
+      ...itinerary,
+      durationDays: dto.durationDays,
+      ...(dto.budgetMin !== undefined ? { budgetMin: dto.budgetMin } : {}),
+      ...(dto.budgetMax !== undefined ? { budgetMax: dto.budgetMax } : {}),
+      ...(dto.currency ? { currency: dto.currency } : {}),
+    };
 
     if (!user) {
-      return itinerary;
+      return itineraryWithConstraints;
     }
 
-    const savedPlan = await this.plansService.save(user, itinerary);
+    const savedPlan = await this.plansService.save(user, itineraryWithConstraints);
 
-    return { ...itinerary, savedPlanId: savedPlan.id };
+    return { ...itineraryWithConstraints, savedPlanId: savedPlan.id };
   }
 
   private createPrompt(
@@ -170,6 +185,9 @@ export class ItineraryService {
       destination,
       packages = [],
       durationDays = 2,
+      budgetMin,
+      budgetMax,
+      currency,
     }: GenerateItineraryDto,
     selectedDestination?: ResolvedPlace,
     currentLocation?: ResolvedPlace,
@@ -185,10 +203,15 @@ export class ItineraryService {
           `BẮT BUỘC lập lịch trình tại đúng ${destination}. Trường destination trong JSON phải là chính xác chuỗi "${destination}". Không tự đổi sang địa phương khác và không thêm chặng di chuyển từ một điểm xuất phát không được cung cấp.`,
         ].join(' ')
       : `Người dùng đang ở vị trí hiện tại được ${currentLocationSource} là "${currentLocation?.formattedAddress ?? `${lat},${lng}`}" (tọa độ ${currentLocation?.lat ?? lat},${currentLocation?.lng ?? lng}). Hãy gợi ý một lịch trình đi du lịch đến một thành phố hoặc địa phương phù hợp tính từ vị trí này.`;
+    const budgetContext =
+      budgetMin !== undefined || budgetMax !== undefined
+        ? `Ngân sách mục tiêu: ${formatBudgetConstraint(budgetMin, budgetMax, currency)}. Đây là ràng buộc định hướng, không được hứa hẹn tổng chi phí chính xác. Chọn hoạt động, quán ăn, điểm tham quan và cách di chuyển phù hợp mức chi này.`
+        : 'Không có ngân sách mục tiêu; hãy đề xuất mức chi tiêu hợp lý và nêu rõ đây là ước tính.';
 
     return [
       destinationContext,
       `Thời gian: ${durationDays} ngày. Yêu cầu đặc biệt (Packages): ${requestedPackages}. Hãy tính toán thời gian di chuyển hợp lý.`,
+      budgetContext,
       'Trả về đúng một JSON object theo ItineraryResponse với destination, totalDays, theme và days.',
       `totalDays phải bằng ${durationDays}; days phải có đúng ${durationDays} phần tử, được đánh số từ 1.`,
       'Mỗi activity phải có id dạng chuỗi riêng, time theo HH:mm, title, description, type là food/sightseeing/relax/transport và locationName. locationName phải là tên một địa điểm cụ thể kèm thành phố/tỉnh để Gemini đối chiếu, ví dụ "Bánh khọt Gốc Vú Sữa, Vũng Tàu"; tránh các mô tả chung chung như "trung tâm thành phố". Backend sẽ tự gán UUID, tọa độ, URL mở bản đồ và nguồn dữ liệu Gemini.',
@@ -253,6 +276,17 @@ export class ItineraryService {
       })),
     };
   }
+}
+
+function formatBudgetConstraint(
+  min?: number,
+  max?: number,
+  currency?: string,
+): string {
+  const unit = currency ?? 'VND';
+  if (min !== undefined && max !== undefined) return `${min.toLocaleString('vi-VN')} – ${max.toLocaleString('vi-VN')} ${unit}`;
+  if (min !== undefined) return `từ ${min.toLocaleString('vi-VN')} ${unit}`;
+  return `tối đa ${(max ?? 0).toLocaleString('vi-VN')} ${unit}`;
 }
 
 function isItineraryResponse(

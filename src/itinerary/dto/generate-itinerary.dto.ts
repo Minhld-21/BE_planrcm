@@ -55,8 +55,29 @@ export class GenerateItineraryDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  @Max(5)
+  @Max(7)
   durationDays = 2;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  budgetMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  budgetMax?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = trimString(value);
+    return typeof trimmed === 'string' ? trimmed.toUpperCase() : trimmed;
+  })
+  @IsString()
+  @Matches(/^[A-Z]{3}$/)
+  currency?: string;
 }
 
 function trimString(value: unknown): unknown {

@@ -14,6 +14,8 @@ export interface SavedPlan {
   createdAt: string;
   visibility: PlanVisibility;
   publishedAt?: string;
+  clonedFromPlanId?: string;
+  originalAuthorId?: string;
   itinerary: ItineraryResponse;
 }
 
@@ -26,6 +28,10 @@ export interface PublicPlanSummary {
   destinationLocation?: PlaceLocation;
   totalDays: number;
   theme: string[];
+  durationDays?: number;
+  budgetMin?: number;
+  budgetMax?: number;
+  currency?: string;
 }
 
 export interface PublicPlan extends PublicPlanSummary {

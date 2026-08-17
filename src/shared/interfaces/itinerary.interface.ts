@@ -31,6 +31,10 @@ export interface DailyItinerary {
 export interface ItineraryResponse {
   destination: string;
   totalDays: number;
+  durationDays?: number;
+  budgetMin?: number;
+  budgetMax?: number;
+  currency?: string;
   theme: string[];
   destinationLocation?: PlaceLocation;
   days: DailyItinerary[];

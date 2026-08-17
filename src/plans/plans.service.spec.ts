@@ -192,4 +192,45 @@ describe('PlansService', () => {
       NotFoundException,
     );
   });
+
+  it('clones an owned plan into a new private plan without changing its source', async () => {
+    const sourcePlan = {
+      userId: user.id,
+      createdAt: timestamp('2026-08-01T08:00:00.000Z'),
+      visibility: 'public' as const,
+      itinerary,
+    };
+    const sourceReference = { get: jest.fn().mockResolvedValue({ exists: true, data: () => sourcePlan }) };
+    const clonedReference = { set: jest.fn().mockResolvedValue(undefined) };
+    const plansCollection = {
+      doc: jest.fn((id: string) => (id === 'source-plan' ? sourceReference : clonedReference)),
+    };
+    const firestore = {
+      collection: jest.fn((name: string) => {
+        if (name === 'users') {
+          return { doc: jest.fn(() => ({ collection: jest.fn(() => plansCollection) })) };
+        }
+        return { doc: jest.fn() };
+      }),
+    } as unknown as Firestore;
+    const service = new PlansService({} as ConfigService, mapsServiceMock());
+    (service as unknown as { firestore: Firestore }).firestore = firestore;
+
+    const clone = await service.clone(user, 'source-plan');
+
+    expect(clone).toMatchObject({
+      userId: user.id,
+      visibility: 'private',
+      clonedFromPlanId: 'source-plan',
+      originalAuthorId: user.id,
+      itinerary,
+    });
+    expect(clone.id).not.toBe('source-plan');
+    expect(clonedReference.set).toHaveBeenCalledWith(expect.objectContaining({
+      visibility: 'private',
+      clonedFromPlanId: 'source-plan',
+      itinerary,
+    }));
+    expect(sourceReference.get).toHaveBeenCalledTimes(1);
+  });
 });
